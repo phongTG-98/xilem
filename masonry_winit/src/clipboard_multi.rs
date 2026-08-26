@@ -4,23 +4,57 @@
 //! String API) and calls `clipboard-win` directly so we can register custom
 //! formats (`HTML Format`, `application/x-suess-rich+json`) and write/read
 //! raw bytes without NUL truncation.
+//!
+//! On non-Windows platforms this is a no-op stub: `get_rich` returns `None`
+//! and `set` does nothing (callers should fall back to the plain
+//! `ClipboardProvider` text path).
 
-use clipboard_win::raw::{
-    get_vec, register_format, set_html, set_string_with, set_without_clear,
-};
+#[cfg(windows)]
 use clipboard_win::options::NoClear;
+#[cfg(windows)]
+use clipboard_win::raw::{get_vec, register_format, set_html, set_string_with, set_without_clear};
 use masonry_core::core::ClipboardFormat;
 
+#[cfg(windows)]
 const RICH_MIME: &str = "application/x-suess-rich+json";
+#[cfg(windows)]
 const HTML_FORMAT_NAME: &str = "HTML Format";
 
 /// Windows multi-format clipboard backend. Caches registered format codes.
+#[cfg(windows)]
 #[derive(Debug)]
 pub struct WindowsMultiClipboard {
     html_fmt: u32,
     rich_fmt: u32,
 }
 
+/// Non-Windows no-op stub with the same API.
+///
+/// Custom clipboard formats are a Win32 concept; other platforms go through
+/// `copypasta`'s plain-text `ClipboardProvider` path instead.
+#[cfg(not(windows))]
+#[derive(Debug, Default)]
+pub struct WindowsMultiClipboard;
+
+#[cfg(not(windows))]
+impl WindowsMultiClipboard {
+    /// Create the stub backend.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// No-op: custom clipboard formats are unsupported off Windows.
+    pub fn set(&mut self, _formats: &[ClipboardFormat]) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+
+    /// Always returns `None` off Windows.
+    pub fn get_rich(&self) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+#[cfg(windows)]
 impl WindowsMultiClipboard {
     /// Register the two custom formats. Safe to call once; the format codes
     /// are stable for the process lifetime.
@@ -28,9 +62,7 @@ impl WindowsMultiClipboard {
         let html_fmt = register_format(HTML_FORMAT_NAME)
             .map(|n| n.get())
             .unwrap_or(0);
-        let rich_fmt = register_format(RICH_MIME)
-            .map(|n| n.get())
-            .unwrap_or(0);
+        let rich_fmt = register_format(RICH_MIME).map(|n| n.get()).unwrap_or(0);
         Self { html_fmt, rich_fmt }
     }
 
@@ -74,5 +106,3 @@ impl WindowsMultiClipboard {
         Some(out)
     }
 }
-
-

@@ -31,13 +31,13 @@ use winit::event::{DeviceEvent as WinitDeviceEvent, DeviceId, WindowEvent as Win
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window as WindowHandle, WindowAttributes, WindowId as HandleId};
 
+use crate::WindowsMultiClipboard;
 use crate::app::{
     AppDriver, DriverCtx, WgpuContext, WgpuLimits, masonry_resize_direction_to_winit,
     winit_ime_to_masonry,
 };
 use crate::app_driver::WindowId;
 use crate::vello_util::{RenderContext, RenderSurface};
-use crate::WindowsMultiClipboard;
 
 /// The custom event type that we inject into winit's [`EventLoop`](winit::event_loop::EventLoop).
 ///
@@ -1070,7 +1070,14 @@ impl MasonryState<'_> {
                     self.clipboard_cx.set_contents(text).unwrap();
                 }
                 RenderRootSignal::ClipboardStoreMulti(formats) => {
+                    #[cfg(windows)]
                     let _ = self.clipboard_multi.set(&formats);
+                    // Non-Windows: degrade to the plain-text format via copypasta.
+                    #[cfg(not(windows))]
+                    if let Some(fmt) = formats.iter().find(|f| f.mime == "text/plain") {
+                        let text = String::from_utf8_lossy(&fmt.data).into_owned();
+                        let _ = self.clipboard_cx.set_contents(text);
+                    }
                 }
                 RenderRootSignal::RequestRedraw => {
                     need_redraw.insert(*handle_id);
